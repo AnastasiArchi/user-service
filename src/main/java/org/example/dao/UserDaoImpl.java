@@ -4,10 +4,15 @@ import org.example.entity.User;
 import org.example.util.HibernateUtil;
 import org.hibernate.Session;
 import org.hibernate.Transaction;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
 public class UserDaoImpl implements UserDao {
+
+    private static final Logger log =
+            LoggerFactory.getLogger(UserDaoImpl.class);
 
     @Override
     public void save(User user) {
@@ -19,11 +24,17 @@ public class UserDaoImpl implements UserDao {
             session.persist(user);
 
             transaction.commit();
+            log.info("Пользователь создан, ID: {}", user.getId());
 
         } catch (Exception e) {
             if (transaction != null && transaction.isActive()) {
-                transaction.rollback();
+                try {
+                    transaction.rollback();
+                } catch (Exception rollbackException) {
+                    log.error("Ошибка отката транзакции", rollbackException);
+                }
             }
+            log.error("Ошибка при создании пользователя", e);
             throw e;
         }
     }
@@ -53,13 +64,19 @@ public class UserDaoImpl implements UserDao {
             session.merge(user);
 
             transaction.commit();
+            log.info("Пользователь обновлён, ID: {}", user.getId());
 
         } catch (Exception e) {
-            if (transaction != null && transaction.isActive()) {
+        if (transaction != null && transaction.isActive()) {
+            try {
                 transaction.rollback();
+            } catch (Exception rollbackException) {
+                log.error("Ошибка отката транзакции", rollbackException);
             }
-            throw e;
         }
+        log.error("Ошибка при обновлении пользователя, ID: {}", user.getId(), e);
+        throw e;
+    }
     }
 
     @Override
@@ -76,11 +93,17 @@ public class UserDaoImpl implements UserDao {
             }
 
             transaction.commit();
+            log.info("Операция удаления завершена, ID: {}", id);
 
         } catch (Exception e) {
             if (transaction != null && transaction.isActive()) {
-                transaction.rollback();
+                try {
+                    transaction.rollback();
+                } catch (Exception rollbackException) {
+                    log.error("Ошибка отката транзакции", rollbackException);
+                }
             }
+            log.error("Ошибка при удалении пользователя, ID: {}", id, e);
             throw e;
         }
     }
