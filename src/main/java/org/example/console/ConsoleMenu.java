@@ -134,7 +134,17 @@ public class ConsoleMenu {
 
     private int readInt(String message) {
         System.out.print(message);
-        return Integer.parseInt(scanner.nextLine());
+        String input = scanner.nextLine();
+
+        if (input.isBlank()) {
+            throw new IllegalArgumentException("Возраст не может быть пустым");
+        }
+
+        try {
+            return Integer.parseInt(input);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Возраст должен быть числом");
+        }
     }
 
     private long readLong(String message) {
