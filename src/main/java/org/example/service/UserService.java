@@ -17,11 +17,12 @@ public class UserService {
         this.userRepository = userRepository;
     }
 
-    public void createUser(String name, String email, Integer age) {
+    public User createUser(String name, String email, Integer age) {
         validateUser(name, email, age);
 
         User user = new User(name, email, age);
-        userRepository.save(user);
+
+        return userRepository.save(user);
     }
 
     public User getUserById(Long id) {
