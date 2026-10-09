@@ -1,11 +1,12 @@
 package org.example.service;
 
-import org.example.dao.UserDao;
 import org.example.entity.User;
+import org.example.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -16,7 +17,7 @@ class UserServiceTest {
 
     @Test
     void shouldReturnUserById() {
-        UserDao userDao = mock(UserDao.class);
+        UserRepository userRepository = mock(UserRepository.class);
 
         User user = new User(
                 "Anna",
@@ -24,10 +25,10 @@ class UserServiceTest {
                 25
         );
 
-        when(userDao.findById(1L))
-                .thenReturn(user);
+        when(userRepository.findById(1L))
+                .thenReturn(Optional.of(user));
 
-        UserService userService = new UserService(userDao);
+        UserService userService = new UserService(userRepository);
 
         User result = userService.getUserById(1L);
 
@@ -38,8 +39,8 @@ class UserServiceTest {
 
     @Test
     void shouldCreateUser() {
-        UserDao userDao = mock(UserDao.class);
-        UserService userService = new UserService(userDao);
+        UserRepository userRepository = mock(UserRepository.class);
+        UserService userService = new UserService(userRepository);
 
         userService.createUser(
                 "Anna",
@@ -47,13 +48,13 @@ class UserServiceTest {
                 25
         );
 
-        verify(userDao).save(any(User.class));
+        verify(userRepository).save(any(User.class));
     }
 
     @Test
     void shouldThrowExceptionWhenEmailIsInvalid() {
-        UserDao userDao = mock(UserDao.class);
-        UserService userService = new UserService(userDao);
+        UserRepository userRepository = mock(UserRepository.class);
+        UserService userService = new UserService(userRepository);
 
         assertThrows(
                 IllegalArgumentException.class,
@@ -63,8 +64,8 @@ class UserServiceTest {
 
     @Test
     void shouldThrowExceptionWhenAgeIsInvalid() {
-        UserDao userDao = mock(UserDao.class);
-        UserService userService = new UserService(userDao);
+        UserRepository userRepository = mock(UserRepository.class);
+        UserService userService = new UserService(userRepository);
 
         assertThrows(
                 IllegalArgumentException.class,
@@ -74,11 +75,11 @@ class UserServiceTest {
 
     @Test
     void shouldThrowExceptionWhenUserNotFound() {
-        UserDao userDao = mock(UserDao.class);
-        UserService userService = new UserService(userDao);
+        UserRepository userRepository = mock(UserRepository.class);
+        UserService userService = new UserService(userRepository);
 
-        when(userDao.findById(1000L))
-                .thenReturn(null);
+        when(userRepository.findById(1000L))
+                .thenReturn(Optional.empty());
 
         assertThrows(
                 NoSuchElementException.class,
@@ -88,7 +89,7 @@ class UserServiceTest {
 
     @Test
     void shouldReturnAllUsers() {
-        UserDao userDao = mock(UserDao.class);
+        UserRepository userRepository = mock(UserRepository.class);
 
         User user1 = new User(
                 "Anna",
@@ -102,15 +103,19 @@ class UserServiceTest {
                 30
         );
 
-        when(userDao.findAll()).thenReturn(List.of(user1, user2));
-        UserService userService = new UserService(userDao);
+        when(userRepository.findAll())
+                .thenReturn(List.of(user1, user2));
+
+        UserService userService = new UserService(userRepository);
+
         List<User> users = userService.getAllUsers();
+
         assertEquals(2, users.size());
     }
 
     @Test
     void shouldUpdateUser() {
-        UserDao userDao = mock(UserDao.class);
+        UserRepository userRepository = mock(UserRepository.class);
 
         User user = new User(
                 "Anna",
@@ -118,8 +123,11 @@ class UserServiceTest {
                 25
         );
 
-        when(userDao.findById(1L)).thenReturn(user);
-        UserService userService = new UserService(userDao);
+        when(userRepository.findById(1L))
+                .thenReturn(Optional.of(user));
+
+        UserService userService = new UserService(userRepository);
+
         userService.updateUser(
                 1L,
                 "Maria",
@@ -131,12 +139,12 @@ class UserServiceTest {
         assertEquals("maria@test.com", user.getEmail());
         assertEquals(30, user.getAge());
 
-        verify(userDao).update(user);
+        verify(userRepository).save(user);
     }
 
     @Test
     void shouldDeleteUser() {
-        UserDao userDao = mock(UserDao.class);
+        UserRepository userRepository = mock(UserRepository.class);
 
         User user = new User(
                 "Anna",
@@ -144,10 +152,13 @@ class UserServiceTest {
                 25
         );
 
-        when(userDao.findById(1L)).thenReturn(user);
-        UserService userService = new UserService(userDao);
+        when(userRepository.findById(1L))
+                .thenReturn(Optional.of(user));
+
+        UserService userService = new UserService(userRepository);
+
         userService.deleteUser(1L);
 
-        verify(userDao).delete(1L);
+        verify(userRepository).deleteById(1L);
     }
 }

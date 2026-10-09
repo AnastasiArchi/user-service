@@ -1,42 +1,45 @@
 package org.example.service;
 
-import org.example.dao.UserDao;
 import org.example.entity.User;
+import org.example.repository.UserRepository;
+import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 
+@Service
 public class UserService {
 
-    private final UserDao userDao;
+    private final UserRepository userRepository;
 
-    public UserService(UserDao userDao) {
-        this.userDao = userDao;
+    public UserService(UserRepository userRepository) {
+        this.userRepository = userRepository;
     }
 
     public void createUser(String name, String email, Integer age) {
         validateUser(name, email, age);
 
         User user = new User(name, email, age);
-        userDao.save(user);
+        userRepository.save(user);
     }
 
     public User getUserById(Long id) {
         validateId(id);
 
-        User user = userDao.findById(id);
+        Optional<User> optionalUser = userRepository.findById(id);
 
-        if (user == null) {
+        if (optionalUser.isEmpty()) {
             throw new NoSuchElementException(
                     "Пользователь с ID " + id + " не найден"
             );
         }
 
-        return user;
+        return optionalUser.get();
     }
 
     public List<User> getAllUsers() {
-        return userDao.findAll();
+        return userRepository.findAll();
     }
 
     public void updateUser(Long id, String name, String email, Integer age) {
@@ -48,12 +51,12 @@ public class UserService {
         user.setEmail(email);
         user.setAge(age);
 
-        userDao.update(user);
+        userRepository.save(user);
     }
 
     public void deleteUser(Long id) {
         getUserById(id);
-        userDao.delete(id);
+        userRepository.deleteById(id);
     }
 
     private void validateUser(String name, String email, Integer age) {
