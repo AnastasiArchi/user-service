@@ -3,6 +3,8 @@ package org.example.service;
 import org.example.entity.User;
 import org.example.repository.UserRepository;
 import org.springframework.stereotype.Service;
+import org.example.dto.UserEvent;
+import org.example.kafka.UserEventProducer;
 
 import java.util.List;
 import java.util.NoSuchElementException;
@@ -12,9 +14,14 @@ import java.util.Optional;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final UserEventProducer userEventProducer;
 
-    public UserService(UserRepository userRepository) {
+    public UserService(
+            UserRepository userRepository,
+            UserEventProducer userEventProducer
+    ) {
         this.userRepository = userRepository;
+        this.userEventProducer = userEventProducer;
     }
 
     public User createUser(String name, String email, Integer age) {
@@ -22,7 +29,13 @@ public class UserService {
 
         User user = new User(name, email, age);
 
-        return userRepository.save(user);
+        User savedUser = userRepository.save(user);
+
+        userEventProducer.sendEvent(
+                new UserEvent("CREATE", savedUser.getEmail())
+        );
+
+        return savedUser;
     }
 
     public User getUserById(Long id) {
@@ -56,8 +69,11 @@ public class UserService {
     }
 
     public void deleteUser(Long id) {
-        getUserById(id);
+        User user = getUserById(id);
         userRepository.deleteById(id);
+        userEventProducer.sendEvent(
+                new UserEvent("DELETE", user.getEmail())
+        );
     }
 
     private void validateUser(String name, String email, Integer age) {
