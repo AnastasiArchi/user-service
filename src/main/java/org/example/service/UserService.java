@@ -65,7 +65,11 @@ public class UserService {
         user.setEmail(email);
         user.setAge(age);
 
-        userRepository.save(user);
+        User updatedUser = userRepository.save(user);
+
+        userEventProducer.sendEvent(
+                new UserEvent("UPDATE", updatedUser.getEmail())
+        );
     }
 
     public void deleteUser(Long id) {
