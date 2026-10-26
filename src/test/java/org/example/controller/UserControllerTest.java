@@ -62,10 +62,10 @@ class UserControllerTest {
 
         mockMvc.perform(get("/api/users"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].id").value(1))
-                .andExpect(jsonPath("$[0].name").value("Maria"))
-                .andExpect(jsonPath("$[0].email").value("maria@test.com"))
-                .andExpect(jsonPath("$[0].age").value(30));
+                .andExpect(jsonPath("$._embedded.userResponseDtoList[0].id").value(1))
+                .andExpect(jsonPath("$._embedded.userResponseDtoList[0].name").value("Maria"))
+                .andExpect(jsonPath("$._embedded.userResponseDtoList[0].email").value("maria@test.com"))
+                .andExpect(jsonPath("$._embedded.userResponseDtoList[0].age").value(30));
     }
 
     @Test
