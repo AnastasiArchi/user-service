@@ -136,6 +136,9 @@ class UserServiceTest {
         when(userRepository.findById(1L))
                 .thenReturn(Optional.of(user));
 
+        when(userRepository.save(user))
+                .thenReturn(user);
+
         UserService userService = new UserService(userRepository, mock(UserEventProducer.class));
 
         userService.updateUser(
