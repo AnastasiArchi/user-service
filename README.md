@@ -1,472 +1,599 @@
-# User Service — Microservices Patterns
+# Microservices — Docker Compose Deployment
 
-Микросервисное приложение для управления пользователями, публикации событий в Apache Kafka и взаимодействия с другими сервисами.
+Микросервисная система для управления пользователями и отправки email-уведомлений. Проект разворачивается в контейнерной среде с использованием Docker Compose.
 
-В рамках ДЗ 7 существующая система расширена паттернами микросервисной архитектуры с использованием Spring Cloud:
+В рамках DevOps реализовано совместное развёртывание инфраструктуры и микросервисов, централизованное управление конфигурацией, обнаружение сервисов и взаимодействие приложений через Apache Kafka.
 
-- API Gateway
-- Service Discovery
-- External Configuration
-- Circuit Breaker
+## Содержание
 
-## Технологии
+- [Архитектура системы](#архитектура-системы)
+- [Технологии](#технологии)
+- [Структура проекта](#структура-проекта)
+- [Компоненты системы](#компоненты-системы)
+- [Сетевая конфигурация](#сетевая-конфигурация)
+- [Подготовка к запуску](#подготовка-к-запуску)
+- [Запуск системы](#запуск-системы)
+- [Проверка работоспособности](#проверка-работоспособности)
+- [Остановка системы](#остановка-системы)
 
-- Java 21
-- Spring Boot 4.1.2
-- Spring Cloud 2025.1.4
-- Spring Web
-- Spring WebFlux
-- Spring Data JPA
-- Spring HATEOAS
-- Springdoc OpenAPI (Swagger UI)
-- Spring Cloud Gateway
-- Spring Cloud Netflix Eureka
-- Spring Cloud Config
-- Spring Cloud Circuit Breaker
-- Resilience4j
-- Spring Boot Actuator
-- PostgreSQL
-- Apache Kafka
-- Maven
-- JUnit и Mockito
+## Архитектура системы
 
-## Структура проекта
+Система состоит из восьми сервисов, объединённых общей Docker-сетью:
 
-```text
-user-service/
-├── api-gateway/
-│   ├── src/
-│   │   └── main/
-│   │       ├── java/
-│   │       └── resources/
-│   │           └── application.properties
-│   └── pom.xml
-│
-├── config-server/
-│   ├── config-repo/
-│   │   ├── user-service.properties
-│   │   └── api-gateway.properties
-│   ├── src/
-│   │   └── main/
-│   │       ├── java/
-│   │       └── resources/
-│   │           └── application.properties
-│   └── pom.xml
-│
-├── eureka-server/
-│   ├── src/
-│   │   └── main/
-│   │       ├── java/
-│   │       └── resources/
-│   │           └── application.properties
-│   └── pom.xml
-│
-├── src/
-│   └── main/
-│       ├── java/
-│       └── resources/
-│           └── application.properties
-│
-├── pom.xml
-└── README.md
-```
-
-## Архитектура приложения
-
-Система состоит из четырёх Spring Boot-приложений:
-
-1. **Eureka Server** — реестр микросервисов.
-2. **Config Server** — централизованное хранилище конфигурации.
-3. **API Gateway** — единая точка входа для клиентских запросов.
-4. **user-service** — основной сервис управления пользователями.
-
-Дополнительно используются PostgreSQL и Apache Kafka.
+1. PostgreSQL — хранение данных пользователей.
+2. Apache Kafka — обмен событиями между микросервисами.
+3. Mailpit — тестовый почтовый сервер.
+4. Eureka Server — обнаружение и регистрация сервисов.
+5. Config Server — централизованное управление конфигурацией.
+6. API Gateway — единая точка входа для клиентских запросов.
+7. user-service — управление пользователями.
+8. notification-service — обработка событий и отправка email-уведомлений.
 
 ### Схема взаимодействия
 
 ```mermaid
 flowchart TD
     Client["Client"]
-    Gateway["API Gateway<br/>:8080"]
-    Eureka["Eureka Server<br/>:8761"]
-    User["user-service<br/>:8082"]
-    Config["Config Server<br/>:8888"]
+    Gateway["API Gateway :8080"]
+    Eureka["Eureka Server :8761"]
+    Config["Config Server :8888"]
+    User["user-service :8082"]
     DB[("PostgreSQL")]
     Kafka[("Apache Kafka")]
-    Notification["notification-service"]
+    Notification["notification-service :8081"]
+    Mailpit["Mailpit :8025"]
 
-    Client -->|"HTTP requests"| Gateway
-    Gateway <-->|"Service discovery"| Eureka
-    User <-->|"Registration / heartbeat"| Eureka
+    Client --> Gateway
+    Gateway <--> Eureka
     Gateway -->|"lb://USER-SERVICE"| User
 
-    Config -->|"user-service.properties"| User
-    Config -->|"api-gateway.properties"| Gateway
+    Config --> Gateway
+    Config --> User
 
+    User <--> Eureka
     User --> DB
-    User -->|"User events"| Kafka
+    User -->|"CREATE / DELETE / UPDATE"| Kafka
     Kafka --> Notification
+    Notification -->|"SMTP"| Mailpit
 ```
 
-## 1. Service Discovery — Eureka
+### Сценарий взаимодействия микросервисов
 
-Для обнаружения микросервисов используется Spring Cloud Netflix Eureka.
+При создании пользователя:
 
-Создано отдельное приложение `eureka-server`, выполняющее роль реестра сервисов.
+1. Клиент отправляет POST-запрос через API Gateway.
+2. API Gateway находит user-service через Eureka.
+3. user-service сохраняет пользователя в PostgreSQL.
+4. user-service публикует событие CREATE в Kafka.
+5. notification-service получает событие из топика `user-events`.
+6. notification-service отправляет email через SMTP в Mailpit.
 
-После запуска приложения регистрируются в Eureka:
+При удалении пользователя аналогично публикуется событие DELETE и отправляется уведомление.
+
+## Технологии
+
+| Технология | Назначение |
+|---|---|
+| Java 21 | Язык разработки |
+| Spring Boot | Разработка микросервисов |
+| Spring Cloud Gateway | API Gateway |
+| Spring Cloud Netflix Eureka | Service Discovery |
+| Spring Cloud Config | External Configuration |
+| Spring Data JPA | Работа с базой данных |
+| PostgreSQL 16 | Реляционная база данных |
+| Apache Kafka 4.3.1 | Обмен событиями |
+| Mailpit | Тестирование email-уведомлений |
+| Docker | Контейнеризация приложений |
+| Docker Compose | Оркестрация контейнеров |
+| Maven | Сборка Java-приложений |
+
+## Структура проекта
+
+Для сборки всех приложений через Docker Compose репозитории должны располагаться рядом:
+
+```text
+HomeWork2/
+├── user-service/
+│   ├── api-gateway/
+│   │   ├── Dockerfile
+│   │   └── pom.xml
+│   │
+│   ├── config-server/
+│   │   ├── config-repo/
+│   │   │   ├── api-gateway.properties
+│   │   │   ├── api-gateway-docker.properties
+│   │   │   ├── user-service.properties
+│   │   │   └── user-service-docker.properties
+│   │   ├── Dockerfile
+│   │   └── pom.xml
+│   │
+│   ├── eureka-server/
+│   │   ├── Dockerfile
+│   │   └── pom.xml
+│   │
+│   ├── src/
+│   ├── Dockerfile
+│   ├── docker-compose.yml
+│   ├── .env.example
+│   ├── .gitignore
+│   ├── pom.xml
+│   └── README.md
+│
+└── notification-service/
+    ├── src/
+    ├── Dockerfile
+    ├── pom.xml
+    └── README.md
+```
+
+`notification-service` является отдельным проектом. Docker Compose использует соседний каталог `../notification-service` в качестве контекста сборки.
+
+## Компоненты системы
+
+### 1. PostgreSQL
+
+Используется для хранения данных пользователей.
+
+Основные параметры:
+
+- Image: `postgres:16`
+- База данных: `user_service`
+- Пользователь: `user_service_user`
+- Порт контейнера: `5432`
+- Порт хоста: `5433`
+
+Данные сохраняются в постоянном Docker Volume:
+
+`postgres_data`
+
+Для проверки готовности используется `pg_isready`.
+
+### 2. Apache Kafka
+
+Используется для асинхронного обмена событиями между микросервисами.
+
+Основные параметры:
+
+- Image: `apache/kafka:4.3.1`
+- Режим работы: KRaft
+- Внутренний адрес: `kafka:19092`
+- Внешний адрес: `localhost:9092`
+- Топик событий: `user-events`
+
+Для хранения данных используется постоянный Docker Volume:
+
+`kafka_data`
+
+Kafka работает с отдельными listener-ами для внутреннего и внешнего подключений.
+
+### 3. Eureka Server — Service Discovery
+
+Реализует централизованный реестр микросервисов.
+
+Основные функции:
+
+- Регистрация экземпляров приложений.
+- Хранение адресов и портов сервисов.
+- Предоставление реестра зарегистрированных приложений.
+- Поддержка обнаружения сервисов через Eureka Client.
+
+После запуска в Eureka регистрируются:
 
 - `USER-SERVICE`
 - `API-GATEWAY`
 
-Eureka хранит информацию о зарегистрированных экземплярах: имя приложения, IP-адрес, порт и состояние доступности.
-
-**Основные настройки:**
-
-- Адрес: `http://localhost:8761`
-- Порт: `8761`
-- Регистрация и получение реестра для Eureka Server отключены.
-
-Для локального окружения `user-service` использует IP-адрес `127.0.0.1` при регистрации в Eureka.
-
-**Проверка:**
-
-Eureka Dashboard:
+Адрес интерфейса:
 
 http://localhost:8761
 
-Получение зарегистрированных сервисов:
+### 4. Config Server — External Configuration
+
+Используется для централизованного управления конфигурациями приложений.
+
+Основные параметры:
+
+- Активный профиль: `native`.
+- Порт: `8888`.
+- Хранилище конфигураций: `config-server/config-repo/`.
+
+Для Docker-окружения используются отдельные профили:
+
+- `user-service-docker.properties`
+- `api-gateway-docker.properties`
+
+Конфигурационные файлы доступны приложениям через Spring Cloud Config Client.
+
+Проверка получения конфигурации:
+
+```bash
+curl http://localhost:8888/user-service/docker
+curl http://localhost:8888/api-gateway/docker
+```
+
+### 5. API Gateway
+
+Используется в качестве единой точки входа для клиентских запросов.
+
+Основные параметры:
+
+- Порт: `8080`.
+- Регистрация в Eureka: включена.
+- Получение реестра сервисов: включено.
+
+Настроена маршрутизация запросов к user-service:
+
+```properties
+spring.cloud.gateway.server.webflux.routes[0].id=user-service
+spring.cloud.gateway.server.webflux.routes[0].uri=lb://USER-SERVICE
+spring.cloud.gateway.server.webflux.routes[0].predicates[0]=Path=/api/users/**
+```
+
+`lb://USER-SERVICE` позволяет Gateway находить экземпляр микросервиса через Eureka и Spring Cloud LoadBalancer.
+
+Клиентские запросы направляются через:
+
+`http://localhost:8080/api/users`
+
+### 6. user-service
+
+Основной микросервис для управления пользователями.
+
+Основные функции:
+
+- Создание пользователей.
+- Получение пользователя по ID.
+- Получение списка пользователей.
+- Обновление данных.
+- Удаление пользователей.
+- Сохранение данных в PostgreSQL.
+- Публикация событий в Kafka.
+- Регистрация в Eureka.
+- Получение конфигурации из Config Server.
+
+Порт: `8082`.
+
+При создании, обновлении и удалении пользователя публикуются соответствующие события в Kafka.
+
+### 7. notification-service
+
+Отдельный микросервис для обработки пользовательских событий и отправки email-уведомлений.
+
+Основные функции:
+
+- Подключение к Kafka.
+- Подписка на топик `user-events`.
+- Обработка событий CREATE и DELETE.
+- Отправка email через SMTP.
+- Обработка события UPDATE без отправки уведомления.
+
+Параметры Docker-профиля:
+
+```properties
+spring.kafka.bootstrap-servers=kafka:19092
+
+spring.mail.host=mailpit
+spring.mail.port=1025
+```
+
+Порт приложения: `8081`.
+
+### 8. Mailpit
+
+Используется для локального тестирования отправки электронной почты.
+
+Параметры:
+
+- SMTP: `1025`
+- Web UI: `8025`
+
+Веб-интерфейс:
+
+http://localhost:8025
+
+Письма не отправляются реальным получателям, а сохраняются в интерфейсе Mailpit для проверки.
+
+## Сетевая конфигурация
+
+Все сервисы подключены к общей Docker-сети:
+
+`app-network`
+
+Внутри Docker-контейнеров приложения взаимодействуют по именам сервисов, а не через `localhost`.
+
+| Компонент | Адрес внутри Docker |
+|---|---|
+| PostgreSQL | `postgres:5432` |
+| Kafka | `kafka:19092` |
+| Eureka Server | `http://eureka-server:8761/eureka/` |
+| Config Server | `http://config-server:8888` |
+| API Gateway | `http://api-gateway:8080` |
+| user-service | `http://user-service:8082` |
+| notification-service | `http://notification-service:8081` |
+| Mailpit SMTP | `mailpit:1025` |
+
+### Порты на хостовой машине
+
+| Сервис | Порт |
+|---|---:|
+| API Gateway | 8080 |
+| notification-service | 8081 |
+| user-service | 8082 |
+| PostgreSQL | 5433 |
+| Kafka | 9092 |
+| Eureka Server | 8761 |
+| Config Server | 8888 |
+| Mailpit SMTP | 1025 |
+| Mailpit Web UI | 8025 |
+
+### Постоянное хранение данных
+
+Для PostgreSQL и Kafka настроены Docker Volumes:
+
+- `postgres_data`
+- `kafka_data`
+
+Данные сохраняются при остановке и пересоздании контейнеров.
+
+## Подготовка к запуску
+
+### Требования
+
+Перед запуском необходимо установить:
+
+- Docker Desktop.
+- Docker Compose.
+
+### Подготовка каталогов
+
+Необходимо расположить репозитории `user-service` и `notification-service` рядом друг с другом, поскольку Docker Compose использует относительный путь `../notification-service`.
+
+### Настройка переменных окружения
+
+В корневом каталоге `user-service` находится шаблон `.env.example`.
+
+Создать локальный файл окружения:
+
+```bash
+cp .env.example .env
+```
+
+Открыть `.env` и указать собственный пароль:
+
+```dotenv
+DB_PASSWORD=your_secure_password
+```
+
+Файл `.env` используется Docker Compose для передачи переменных окружения контейнерам.
+
+**Важно:** файл `.env` содержит секретные данные и не должен добавляться в Git. Для этого он исключён через `.gitignore`.
+
+## Запуск системы
+
+Все команды необходимо выполнять из корневого каталога `user-service`, где расположен `docker-compose.yml`.
+
+### 1. Проверка конфигурации
+
+```bash
+docker compose config --quiet
+```
+
+Команда проверяет корректность Docker Compose без запуска контейнеров.
+
+### 2. Сборка и запуск всех сервисов
+
+```bash
+docker compose up --build -d
+```
+
+Параметры:
+
+- `up` — создание и запуск сервисов.
+- `--build` — сборка Docker-образов приложений.
+- `-d` — запуск контейнеров в фоновом режиме.
+
+Docker Compose автоматически создаёт сеть, необходимые тома и запускает все восемь сервисов.
+
+### 3. Проверка состояния контейнеров
+
+```bash
+docker compose ps
+```
+
+PostgreSQL и Kafka должны получить статус `healthy`. Остальные приложения должны находиться в состоянии `Up`.
+
+Для просмотра логов:
+
+```bash
+docker compose logs --tail=100
+```
+
+Логи отдельных компонентов:
+
+```bash
+docker compose logs --tail=100 user-service
+docker compose logs --tail=100 notification-service
+docker compose logs --tail=100 api-gateway
+docker compose logs --tail=100 config-server
+docker compose logs --tail=100 eureka-server
+```
+
+После первого запуска необходимо дождаться полной инициализации Spring Boot приложений и регистрации сервисов в Eureka.
+
+## Проверка работоспособности
+
+### 1. Проверка Eureka
+
+Получение списка зарегистрированных сервисов:
 
 ```bash
 curl -H "Accept: application/json" \
 http://localhost:8761/eureka/apps
 ```
 
-Получение информации о `USER-SERVICE`:
+В реестре должны присутствовать:
 
-```bash
-curl -H "Accept: application/json" \
-http://localhost:8761/eureka/apps/USER-SERVICE
-```
+- `USER-SERVICE`
+- `API-GATEWAY`
 
-## 2. External Configuration — Spring Cloud Config
+Оба сервиса должны иметь статус `UP`.
 
-Для централизованного управления настройками используется Spring Cloud Config.
-
-Создано отдельное приложение `config-server`, которое предоставляет конфигурацию другим приложениям.
-
-В качестве хранилища используется Native Profile — конфигурационные файлы располагаются в файловой системе.
-
-**Основные настройки:**
-
-- Адрес Config Server: `http://localhost:8888`
-- Порт: `8888`
-- Активный профиль: `native`
-- Каталог конфигурации: `config-server/config-repo/`
-
-Внешние конфигурационные файлы:
-
-| Файл | Приложение |
-|---|---|
-| `user-service.properties` | user-service |
-| `api-gateway.properties` | API Gateway |
-
-Для получения внешних настроек приложения используют Spring Cloud Config Client.
-
-Локальный `application.properties` содержит имя приложения и адрес Config Server.
-
-Пример:
-
-```properties
-spring.application.name=user-service
-spring.config.import=optional:configserver:http://localhost:8888
-```
-
-**Проверка:**
+### 2. Проверка Config Server
 
 Получение конфигурации user-service:
 
 ```bash
-curl http://localhost:8888/user-service/default
+curl http://localhost:8888/user-service/docker
 ```
 
 Получение конфигурации API Gateway:
 
 ```bash
-curl http://localhost:8888/api-gateway/default
+curl http://localhost:8888/api-gateway/docker
 ```
 
-## 3. API Gateway — Spring Cloud Gateway
+Ожидаемый результат — HTTP 200 и JSON с соответствующими настройками приложений.
 
-Для организации единой точки входа используется Spring Cloud Gateway Server WebFlux.
+### 3. Проверка API Gateway
 
-API Gateway принимает HTTP-запросы от клиентов и маршрутизирует их в соответствующие микросервисы.
-
-**Основные настройки:**
-
-- Адрес: `http://localhost:8080`
-- Порт: `8080`
-- Регистрация в Eureka: включена.
-- Получение реестра сервисов: включено.
-
-Настроен маршрут для `user-service`.
-
-```properties
-spring.cloud.gateway.server.webflux.routes[0].id=user-service
-
-spring.cloud.gateway.server.webflux.routes[0].uri=lb://USER-SERVICE
-
-spring.cloud.gateway.server.webflux.routes[0].predicates[0]=Path=/api/users/**
-```
-
-`lb://USER-SERVICE` означает, что Gateway получает адрес экземпляра сервиса через Eureka и LoadBalancer.
-
-Все запросы, соответствующие `/api/users/**`, перенаправляются в `user-service`.
-
-**Пример:**
-
-```text
-Клиент:
-GET http://localhost:8080/api/users
-
-API Gateway:
-8080 → Eureka → USER-SERVICE:8082
-
-Результат:
-HTTP 200 OK
-```
-
-## 4. Circuit Breaker — Resilience4j
-
-Для защиты от отказов зависимых сервисов используется Spring Cloud Circuit Breaker с реализацией Resilience4j.
-
-Circuit Breaker отслеживает ошибки при обращении Gateway к `user-service` и ограничивает запросы к недоступному сервису.
-
-Используется экземпляр:
-
-`userServiceCircuitBreaker`
-
-### Настройки Circuit Breaker
-
-| Параметр | Значение | Описание |
-|---|---|---|
-| Sliding window type | COUNT_BASED | Окно на основе количества запросов |
-| Sliding window size | 5 | Размер окна — 5 запросов |
-| Minimum number of calls | 5 | Минимальное количество запросов для расчёта ошибок |
-| Failure rate threshold | 50% | Порог срабатывания |
-| Wait duration in open state | 10s | Время нахождения в OPEN |
-| Permitted calls in half-open state | 2 | Количество проверочных запросов |
-
-### Состояния Circuit Breaker
-
-- **CLOSED** — запросы проходят в целевой сервис, ошибки отслеживаются.
-- **OPEN** — обращения к недоступному сервису блокируются, выполняется переход к Fallback.
-- **HALF_OPEN** — разрешается ограниченное количество проверочных запросов для определения доступности сервиса.
-
-При успешном восстановлении целевого сервиса Circuit Breaker возвращается в CLOSED.
-
-### Fallback
-
-В API Gateway создан `FallbackController`, который обрабатывает запросы по адресу `/fallback`.
-
-При недоступности `user-service` возвращается HTTP 503 Service Unavailable.
-
-Пример ответа:
-
-```json
-{
-  "error": "USER_SERVICE_UNAVAILABLE",
-  "message": "Сервис пользователей временно недоступен. Попробуйте позже."
-}
-```
-
-### Мониторинг Circuit Breaker
-
-Для мониторинга используется Spring Boot Actuator и Resilience4j Micrometer.
-
-Открытые endpoints:
-
-| Endpoint | Назначение |
-|---|---|
-| `/actuator/health` | Проверка состояния приложения |
-| `/actuator/info` | Информация о приложении |
-| `/actuator/metrics` | Список доступных метрик |
-
-Основные метрики Resilience4j:
-
-- `resilience4j.circuitbreaker.calls`
-- `resilience4j.circuitbreaker.state`
-- `resilience4j.circuitbreaker.failure.rate`
-- `resilience4j.circuitbreaker.not.permitted.calls`
-
-Проверка состояния CLOSED:
-
-```bash
-curl -G http://localhost:8080/actuator/metrics/resilience4j.circuitbreaker.state \
-  --data-urlencode "tag=name:userServiceCircuitBreaker" \
-  --data-urlencode "tag=state:closed"
-```
-
-Аналогично можно проверить состояния OPEN и HALF_OPEN.
-
-## REST API
-
-REST API реализован в `UserController`.
-
-| HTTP-метод | Endpoint | Описание |
-|---|---|---|
-| GET | `/api/users` | Получение списка пользователей |
-| GET | `/api/users/{id}` | Получение пользователя по ID |
-| POST | `/api/users` | Создание пользователя |
-| PUT | `/api/users/{id}` | Обновление пользователя |
-| DELETE | `/api/users/{id}` | Удаление пользователя |
-
-Внешний адрес API через Gateway:
-
-`http://localhost:8080/api/users`
-
-## Swagger / OpenAPI
-
-Для изучения и тестирования REST API используется Swagger UI.
-
-После запуска `user-service` документация доступна по адресам:
-
-- Swagger UI: http://localhost:8082/swagger-ui.html
-- OpenAPI JSON: http://localhost:8082/v3/api-docs
-
-## HATEOAS
-
-API возвращает ссылки для навигации между ресурсами в формате HAL.
-
-Основные ссылки:
-
-- `self` — ссылка на текущий ресурс пользователя.
-- `users` — ссылка на коллекцию пользователей.
-
-При получении списка пользователей в `_embedded` содержится коллекция пользователей, у каждого из которых есть ссылка `self`.
-
-При создании, получении и обновлении пользователя ответ содержит ссылки для навигации. Удаление пользователя возвращает статус `204 No Content` без тела ответа.
-
-В текущей локальной конфигурации HATEOAS-ссылки формируются на адрес `user-service` (`127.0.0.1:8082`).
-
-## Взаимодействие с Kafka
-
-События публикуются в топик `user-events`.
-
-При создании пользователя отправляется событие с операцией `CREATE`, при удалении — с операцией `DELETE`.
-
-Пример события:
-
-```json
-{
-  "operation": "CREATE",
-  "email": "user@example.com"
-}
-```
-
-Эти события обрабатывает отдельный микросервис `notification-service`, который отправляет email-уведомления пользователям.
-
-Локальные настройки Kafka:
-
-- Адрес брокера: `localhost:9092`
-- Топик событий: `user-events`
-
-## Запуск проекта
-
-Для локального запуска необходимо:
-
-- Java 21
-- Maven
-- PostgreSQL
-- Apache Kafka
-
-PostgreSQL должен быть доступен на порту `5432`. Необходима база данных `user_service` и пользователь `user_service_user`.
-
-Пароль базы данных передаётся через переменную окружения `DB_PASSWORD`. Не следует записывать реальный пароль в конфигурационные файлы или Git.
-
-Для Fish Shell перед запуском `user-service` можно задать переменную:
-
-```bash
-set -x DB_PASSWORD 'your_database_password'
-```
-
-Замените значение на пароль локальной учётной записи PostgreSQL. В IntelliJ IDEA также можно задать эту переменную в Run Configuration.
-
-### Порядок запуска приложений
-
-Каждое приложение запускается в отдельном терминале.
-
-**1. Eureka Server**
-
-```bash
-cd eureka-server
-mvn spring-boot:run
-```
-
-После запуска доступен на `http://localhost:8761`.
-
-**2. Config Server**
-
-```bash
-cd config-server
-mvn spring-boot:run
-```
-
-Важно запускать команду из каталога `config-server`, так как Native Profile использует относительный путь `file:./config-repo/`.
-
-После запуска доступен на `http://localhost:8888`.
-
-**3. user-service**
-
-В корне проекта:
-
-```bash
-mvn spring-boot:run
-```
-
-Перед запуском должна быть установлена переменная окружения `DB_PASSWORD`, а PostgreSQL и Kafka должны быть доступны.
-
-После запуска доступен на `http://localhost:8082`.
-
-**4. API Gateway**
-
-В корне проекта:
-
-```bash
-mvn -f api-gateway/pom.xml spring-boot:run
-```
-
-После запуска доступен на `http://localhost:8080`.
-
-### Проверка работоспособности
-
-Проверка API через Gateway:
+Получение списка пользователей:
 
 ```bash
 curl -i http://localhost:8080/api/users
 ```
 
-Проверка получения конкретного пользователя:
+Получение пользователя по ID:
 
 ```bash
-curl -i http://localhost:8080/api/users/3
+curl -i http://localhost:8080/api/users/1
 ```
 
-Проверка регистрации сервисов в Eureka:
+### 4. Проверка создания пользователя
 
 ```bash
-curl -H "Accept: application/json" \
-http://localhost:8761/eureka/apps
+curl -i -X POST http://localhost:8080/api/users \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Docker Test",
+    "email": "docker.test@example.com",
+    "age": 29
+  }'
 ```
 
-Проверка получения внешней конфигурации:
+Ожидаемый HTTP-статус:
+
+`201 Created`
+
+В ответе возвращаются данные пользователя и HATEOAS-ссылки.
+
+### 5. Проверка Kafka и email-уведомлений
+
+После создания пользователя user-service публикует событие CREATE в топик `user-events`.
+
+notification-service получает событие и отправляет email.
+
+Проверка логов:
 
 ```bash
-curl http://localhost:8888/user-service/default
+docker compose logs --since=5m notification-service
 ```
 
-### Проверка Circuit Breaker
+Ожидаемые сообщения:
 
-1. Убедиться, что все приложения запущены.
-2. Остановить `user-service`.
-3. Отправить несколько запросов через API Gateway:
+```text
+Получено событие из Kafka
+Операция: CREATE
+Email: docker.test@example.com
+```
+
+Проверить полученное письмо можно через Mailpit:
+
+http://localhost:8025
+
+Тема письма:
+
+`Аккаунт успешно создан`
+
+### 6. Проверка удаления пользователя
+
+Для удаления используется ID, полученный в ответе на создание пользователя:
+
+```bash
+curl -i -X DELETE http://localhost:8080/api/users/1
+```
+
+Ожидаемый HTTP-статус:
+
+`204 No Content`
+
+После удаления user-service отправляет событие DELETE в Kafka.
+
+Проверка обработки:
+
+```bash
+docker compose logs --since=5m notification-service
+```
+
+Ожидаемые сообщения:
+
+```text
+Получено событие из Kafka
+Операция: DELETE
+Email: docker.test@example.com
+```
+
+В Mailpit должно появиться письмо с темой:
+
+`Аккаунт удалён`
+
+**Примечание:** в командах проверки необходимо использовать ID реально созданного пользователя и уникальный email.
+
+## Swagger / OpenAPI
+
+Документация REST API доступна через Swagger UI:
+
+http://localhost:8082/swagger-ui.html
+
+OpenAPI JSON:
+
+http://localhost:8082/v3/api-docs
+
+## Остановка системы
+
+Для остановки и удаления контейнеров и сети проекта:
+
+```bash
+docker compose down
+```
+
+Постоянные тома PostgreSQL и Kafka при этом сохраняются.
+
+Для повторного запуска:
+
+```bash
+docker compose up --build -d
+```
+
+**Внимание:** команда ниже удаляет также постоянные тома с данными PostgreSQL и Kafka:
+
+```bash
+docker compose down -v
+```
+
+Использовать её следует только при необходимости полного сброса данных.
+
+---
+
+## Итог
+
+В результате развёртывания Docker Compose обеспечивает совместную работу инфраструктурных компонентов и микросервисов:
+
+- единый запуск всех компонентов системы;
+- централизованное управление конфигурацией через Spring Cloud Config;
+- обнаружение сервисов через Eureka;
+- маршрутизацию запросов через API Gateway;
+- хранение пользовательских данных в PostgreSQL;
+- асинхронный обмен событиями через Apache Kafka;
+- обработку событий и отправку email-уведомлений через notification-service;
+- тестирование отправки писем с помощью Mailpit.
+
+Таким образом, микросервисная система разворачивается в контейнерной среде и поддерживает взаимодействие между всеми необходимыми компонентами.
